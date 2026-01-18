@@ -1,0 +1,8 @@
+prefix=/home/alpha12/catkin_ws/install
+
+Name: wego_2d_nav
+Description: Description of wego_2d_nav
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

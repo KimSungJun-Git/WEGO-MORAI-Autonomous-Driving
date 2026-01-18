@@ -1,0 +1,2 @@
+set(robot_localization_MESSAGE_FILES "")
+set(robot_localization_SERVICE_FILES "/home/alpha12/catkin_ws/src/robot_localization/srv/GetState.srv;/home/alpha12/catkin_ws/src/robot_localization/srv/SetDatum.srv;/home/alpha12/catkin_ws/src/robot_localization/srv/SetPose.srv;/home/alpha12/catkin_ws/src/robot_localization/srv/SetUTMZone.srv;/home/alpha12/catkin_ws/src/robot_localization/srv/ToggleFilterProcessing.srv;/home/alpha12/catkin_ws/src/robot_localization/srv/FromLL.srv;/home/alpha12/catkin_ws/src/robot_localization/srv/ToLL.srv")

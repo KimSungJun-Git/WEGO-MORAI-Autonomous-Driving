@@ -1,0 +1,8 @@
+prefix=/home/alpha12/catkin_ws/install
+
+Name: rospy_rosbridge_connector
+Description: Description of rospy_rosbridge_connector
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

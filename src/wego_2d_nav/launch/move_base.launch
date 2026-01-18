@@ -1,0 +1,26 @@
+<launch >
+    <node pkg = "move_base" type = "move_base" name = "move_base" output = "screen" >
+        <!-- costmap -->
+        <rosparam file = "$(find wego_2d_nav)/params/costmap_common_params.yaml" command = "load" ns = "global_costmap" />
+        <rosparam file = "$(find wego_2d_nav)/params/costmap_common_params.yaml" command = "load" ns = "local_costmap" />
+
+        <rosparam file = "$(find wego_2d_nav)/params/global_costmap_params.yaml" command = "load" />
+        <rosparam file = "$(find wego_2d_nav)/params/local_costmap_params.yaml" command = "load" />
+
+        <!-- global path planning && local path planning -->
+        <param name = "base_global_planner" value = "global_planner/GlobalPlanner" />
+        <param name = "use_dijkstra" value = "true" />
+        <param name = "planner_frequency" value = "5.0" /> <!-- 주기 -->
+        <param name = "planner_patience" value = "5.0" /> <!-- 얼마나 기다릴지 ? -->
+x
+        <param name = "base_local_planner" value = "teb_local_planner/TebLocalPlannerROS" />
+        <rosparam file = "$(find wego_2d_nav)/params/teb_local_planner_params.yaml" command = "load" />
+        <param name = "controller_frequency" value = "10.0" />
+        <param name = "controller_patience" value = "7.0" />
+
+        <param name = "clearing_rotation_allowed" value = "false" />
+        <remap from = "odom" to = "/odometry/filtered" /> <!-- odom 토픽 대신 odometry/filtered 토픽으로 받아라-->
+
+    </node >
+    <node pkg = "wego_2d_nav" type = "cmd_vel_to_ackermann.py" name = "cmd_vel_to_ackermann" />
+</launch >

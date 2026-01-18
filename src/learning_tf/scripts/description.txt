@@ -1,0 +1,7 @@
+.py 파일을 만들고 이를 CMakeLists.txt파일에서 catkin_install_python()
+에 경로를 설정하여 catkin_make를 실행하면 python 노드를 실행 가능한 상태로 설치해줌
+
+주요 기능
+chmod +x없이 ros에서 rosrun 및 roslaunch를 사용가능하게 하고 패키지 설치시 이를 /devel/lib/패키지명에 복사해줌.
+
+이를 안할시 roslaunch가 찾지 못할 수 있음.
