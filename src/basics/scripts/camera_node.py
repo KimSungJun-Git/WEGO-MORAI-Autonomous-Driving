@@ -2,7 +2,7 @@
 
 import rospy
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import  Int32
+from std_msgs.msg import Int32MultiArray
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
@@ -11,143 +11,163 @@ class Lane_sub:
     def __init__(self):
         rospy.init_node("lane_sub_node")
         rospy.Subscriber("/image_jpeg/compressed", CompressedImage, self.cam_CB)
-        self.center_pub = rospy.Publisher("/driving_center", Int32, queue_size = 3)
+        self.center_index_pub = rospy.Publisher("/driving_center", Int32MultiArray, queue_size=3)
+        # ★ 추가: 차선 대표 점 퍼블리셔
+        self.lane_points_pub = rospy.Publisher("/lane_points", Int32MultiArray, queue_size=3)
+
         self.bridge = CvBridge()
+        self.center_index_msg = Int32MultiArray()
+        self.lane_points_msg = Int32MultiArray()
+
+        # ====== 기존 값 유지 ======
         self.fixed_center = 320
-        self.yellow_lower = np.array([15, 128, 0])
-        self.yellow_upper = np.array([40, 255, 255])
-        self.white_lower = np.array([0, 0, 192])
-        self.white_upper = np.array([179, 64, 255])
-        rospy.Timer(rospy.Duration(1.0 / 10), self.timerCB)
+        self.lane_width = 350
+
+        # ====== 추가: 적응형 HSV 파라미터 ======
+        self.base_white = np.array([  0,   0, 192], np.uint8)  # H,S,V_low
+        self.base_white_up = np.array([179,  64, 255], np.uint8)
+        self.base_yellow = np.array([ 15,  80,   0], np.uint8)
+        self.base_yellow_up = np.array([ 40, 255, 255], np.uint8)
+
+        self.ema_alpha = 0.2
+        self.v_ema = None
+        self.prev_mask = None
+
+        # 정지선(강한 흰색) 모드 관리
+        self.stopline_mode = False
+        self.stopline_count = 0
+        self.stopline_on_threshold = 0.20
+        self.stopline_off_threshold = 0.08
+        self.hold_frames = 5
 
     def cam_CB(self, msg):
         img = self.bridge.compressed_imgmsg_to_cv2(msg)
-        self.y, self.x = img.shape[:2]
-        filtered_img = self.hsv(img)
-        warped_img = self.perspective_transform(filtered_img)
-        bin_img = self.binary(warped_img)
-        left_indices, right_indices = self.histogram(bin_img)
-        center_index = self.judgement(left_indices, right_indices)
-        self.publish(center_index)
-        
-        cv2.imshow("Original", img)
-        cv2.imshow("Warped", warped_img)
-        cv2.waitKey(1)
+        y, x = img.shape[:2]
 
-    def hsv(self, data):
-        src_img = data
-        img_hsv = cv2.cvtColor(src_img, cv2.COLOR_BGR2HSV)
-        yellow_range = cv2.inRange(img_hsv, self.yellow_lower, self.yellow_upper)
-        white_range = cv2.inRange(img_hsv, self.white_lower, self.white_upper)
-        combined_range = cv2.bitwise_or(yellow_range, white_range)
-        filtered_img = cv2.bitwise_and(src_img, src_img, mask=combined_range)
-        return filtered_img
+        # (1) 조도 적응형 HSV
+        img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        roi_h = int(y * 0.25)
+        roi = img_hsv[y - roi_h : y, :]
+        v_mean = float(np.mean(roi[:,:,2]))
+        if self.v_ema is None:
+            self.v_ema = v_mean
+        else:
+            self.v_ema = (1 - self.ema_alpha) * self.v_ema + self.ema_alpha * v_mean
 
-    def perspective_transform(self, data):
-        filtered_img = data
-        src_points = np.float32([[0, 460], [225, 315], [415, 315], [640, 460]])
-        dst_points = np.float32([[82, 480], [118, 0], [540, 0], [575, 480]])
+        v_low = int(np.clip(192 - (200 - self.v_ema) * 0.25, 150, 210))
+        white_lower = self.base_white.copy(); white_lower[2] = v_low
+        s_low = int(np.clip(80 - (200 - self.v_ema) * 0.15, 60, 80))
+        yellow_lower = self.base_yellow.copy(); yellow_lower[1] = s_low
+
+        # (2) 정지선 모드 감지/해제
+        band_h = max(20, int(y * 0.10))
+        band = img_hsv[y - band_h : y, :]
+        band_white = cv2.inRange(band, white_lower, self.base_white_up)
+        white_ratio = float(np.count_nonzero(band_white)) / (band.shape[0]*band.shape[1] + 1e-6)
+
+        if not self.stopline_mode and white_ratio >= self.stopline_on_threshold:
+            self.stopline_mode = True; self.stopline_count = self.hold_frames
+        elif self.stopline_mode:
+            self.stopline_count -= 1
+            if white_ratio <= self.stopline_off_threshold and self.stopline_count <= 0:
+                self.stopline_mode = False
+
+        # (3) HSV 마스크
+        white_range = cv2.inRange(img_hsv, white_lower, self.base_white_up)
+        yellow_range = cv2.inRange(img_hsv, yellow_lower, self.base_yellow_up)
+        if self.stopline_mode:
+            combined_range = cv2.bitwise_or(white_range, cv2.bitwise_and(yellow_range, white_range))
+        else:
+            combined_range = cv2.bitwise_or(yellow_range, white_range)
+
+        # (4) 히스테리시스
+        if self.prev_mask is not None:
+            combined_range = cv2.bitwise_or(combined_range, self.prev_mask)
+        self.prev_mask = combined_range.copy()
+
+        filtered_img = cv2.bitwise_and(img, img, mask=combined_range)
+
+        # (5) Perspective transform (기존 유지)
+        src_points = np.float32([[0, 420], [180, 300], [400, 320], [x-40, 420]])
+        dst_points = np.float32([[x*0.25, y-1], [x*0.25, 0], [x*0.75, 0], [x*0.75, y-1]])
         matrix = cv2.getPerspectiveTransform(src_points, dst_points)
-        warped_img = cv2.warpPerspective(filtered_img, matrix, (self.x, self.y))
-        return warped_img
-    
-    def binary(self, data):
-        warped_img = data
+        warped_img = cv2.warpPerspective(filtered_img, matrix, (x, y))
+
+        # (6) Binary (기존 유지)
         grayed_img = cv2.cvtColor(warped_img, cv2.COLOR_BGR2GRAY)
         bin_img = np.zeros_like(grayed_img)
         bin_img[grayed_img > 50] = 255
-        return bin_img
 
-    def histogram(self, data):
-        bin_img = data
+        # (7) Histogram 기반 좌/우 검출 (기존 유지)
         histogram = np.sum(bin_img, axis=0)
         left_hist = histogram[0:self.fixed_center]
         right_hist = histogram[self.fixed_center:]
         left_indices = np.where(left_hist > 5)[0]
         right_indices = np.where(right_hist > 5)[0] + self.fixed_center
-        return left_indices, right_indices
 
+        center_index = self.judgement(left_indices, right_indices)
+
+        # ★ 추가: 좌/우 대표 점(xl, yl, xr, yr) 산출 (BEV 좌표계, 맨 아래 y)
+        yl = y - 1
+        yr = y - 1
+        xl = int(left_indices[-1]) if len(left_indices) > 0 else -1
+        xr = int(right_indices[0]) if len(right_indices) > 0 else -1
+        self.publish_points(xl, yl, xr, yr)
+
+        # (8) 기존 퍼블리시 유지
+        self.publish(center_index, left_indices, right_indices)
+
+        # 디버깅
+        cv2.imshow("mask", combined_range)
+        cv2.imshow("Original", img)
+        cv2.imshow("Warped", warped_img)
+        cv2.waitKey(1)
+        
     def judgement(self, l_data, r_data):
+        center_index = self.fixed_center
         left_indices = l_data
         right_indices = r_data
-        center_index = self.fixed_center  # 기본값
+        print(f"{self.center_index_msg}")
 
-        # 디버그 출력 (원하면 유지)
-        if left_indices.size > 0 or right_indices.size > 0:
-            print(left_indices, right_indices)
-        print(len(left_indices), len(right_indices))
-
-        # --- 양쪽 차선 ---
         if len(left_indices) > 0 and len(right_indices) > 0:
-            if len(left_indices) > 70:
-                center_index = int(0.5 * right_indices[-1] + 40)
-                rospy.loginfo("stop line detected")
-            elif len(right_indices) > 60:
-                center_index = int(0.5 * right_indices[-1] + 40)
-                rospy.loginfo("right line detected")
-            else:
-                center_index = int((left_indices[0] + right_indices[-1]) / 2)
-                rospy.loginfo("Both lines detected")
+            left_pos = left_indices[-1]
+            right_pos = right_indices[0]
+            current_width = right_pos - left_pos
+            self.lane_width = 0.9 * self.lane_width + 0.1 * current_width
+            center_index = (left_pos + right_pos) // 2
             return center_index
-
-        # --- 오른쪽만 ---
-        if len(right_indices) > 0:
-            center_index = int(0.5 * right_indices[-1] + 40)
-            rospy.loginfo("right lines only")
+        elif len(left_indices) > 0 and len(right_indices) == 0:
+            left_pos = left_indices[-1]
+            center_index = int(left_pos + self.lane_width / 2)
             return center_index
-
-        # --- 왼쪽만 ---
-        if len(left_indices) > 0:
-            # 간단한 휴리스틱: 왼쪽 가장자리와 기준 센터의 중간값
-            center_index = int((left_indices[0] + self.fixed_center) / 2)
-            rospy.loginfo("left lines only (heuristic)")
+        elif len(right_indices) > 0 and len(left_indices) == 0:
+            right_pos = right_indices[0]
+            center_index = int(right_pos - self.lane_width / 2)
             return center_index
-
-        # --- 아무것도 없음 ---
-        rospy.logwarn("No lines detected, using fixed center")
-        return center_index
-
-
-        
-        
-        
-        
-        #     center_index = (left_indices[0] + right_indices[-1]) // 2
-        #     rospy.loginfo(" Both lines detected")
-        #     print(center_index)
-        #     return center_index
-        
-        # elif len(left_indices) > 90:
-        #     center_index = ((0.5 * right_indices[-1]) + 55)
-        #     rospy.loginfo(" right lines only ")
-        #     print(center_index)
-        #     return center_index
-        
-        # elif left_indices[0] == 0:
-        #     center_index = (left_indices[120] + right_indices[-1]) // 2
-        #     print(center_index)
-        #     return center_index
-
-    def publish(self, data):
-        # None/NaN 방어
-        if data is None or (isinstance(data, float) and not np.isfinite(data)):
-            rospy.logwarn("center_index is None/NaN -> using last_center")
-            center = getattr(self, "last_center", self.fixed_center)
         else:
-            center = int(data)
-    
-        # 마지막 정상값 갱신
-        self.last_center = center
-    
-        msg = Int32()
-        msg.data = center
-        self.center_pub.publish(msg)
-        
-    def timerCB(self, data):
-        pass
+            return center_index
+
+    def publish(self, data, left, right):
+        center_index = data
+        len_left = len(left)
+        len_right = len(right)
+        width = None
+        print(len_left, len_right)
+        if len_left > 0 and len_right > 0:
+            width = right[0] - left[-1]
+        c_l_r_w = [center_index, len_left, len_right, width]
+        self.center_index_msg.data = c_l_r_w
+        if width is not None:
+            self.center_index_pub.publish(self.center_index_msg)
+
+    # ★ 추가: lane_points 퍼블리시 (xl, yl, xr, yr)
+    def publish_points(self, xl, yl, xr, yr):
+        # BEV 좌표계 (warped_img 기준)
+        self.lane_points_msg.data = [int(xl), int(yl), int(xr), int(yr)]
+        # 어떤 경우에도 포인트는 보내달라고 하셨으므로 바로 퍼블리시
+        self.lane_points_pub.publish(self.lane_points_msg)
 
 def main():
-
     try:
         lane_sub = Lane_sub()
         rospy.spin()
