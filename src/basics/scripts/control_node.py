@@ -46,18 +46,14 @@ class controller :
         self.center_index = 0
         self.line_width = 0
         self.line_number_state = False
-        # ✅ 우회전 시 조향각을 증폭시킬 계수 (1.0이 기본, 클수록 더 많이 꺾음)
+        # 우회전 시 조향각을 증폭시킬 계수 (1.0이 기본, 클수록 더 많이 꺾음)
         self.turn_gain = 2.0
         # 정지선 인식
         self.stop_flag = 0
         self.stopline_detected = False
         # 차량 정지선 0.3m이내 정지
-        # self.traffic_red = 5, 1
         # # 좌회전
-        # self.traffic_green = 16
-        # self.traffic_greed_left = 33
         # 차량 감속
-        # self.traffic_orange = 4
         rospy.Timer(rospy.Duration(1.0/10), self.timerCB)
         self.state = State.STRAIGHT
         self.state_start = rospy.get_time()
@@ -98,7 +94,6 @@ class controller :
         
         # [ADD] 하드 진입(고정 조향) 관리 변수
         self.use_hard_entry = False
-        #self.hard_entry_duration = 2.3   # 총 수행 시간(초)로터리 부분
         self.hard_entry_progress = 0.0   # 누적 수행 시간(초)
         self.hard_entry_start = 0.0      # 트리거 시각 (참고용)
         self.hard_resume_pending = False # STOP으로 빠진 뒤 재개 대기 플래그
@@ -126,7 +121,6 @@ class controller :
         self.tl_status = None
 
         ################################################################### slam 판단 상태변수 ##################################################################
-        # self.slam_state = False
         self.slam_state = True
         self.first_ob_state = False
         self.second_ob_state = False
@@ -241,7 +235,7 @@ class controller :
         # (2) 현재 섹터 모든 장애물이 dist_clear_thresh 이상 떨어져 있으면 → 틈
         curr_ranges = [r for _, _, _, r in curr_sector]
         if all(r >= dist_clear_thresh for r in curr_ranges):
-            rospy.loginfo(f"✅ {angle_min_deg}°~{angle_max_deg}° 구간 장애물이 모두 {dist_clear_thresh}m 이상 → 틈 판정")
+            rospy.loginfo(f"{angle_min_deg}°~{angle_max_deg}° 구간 장애물이 모두 {dist_clear_thresh}m 이상 → 틈 판정")
             return True
 
         # (3) 거리 변화량 기반 판정
@@ -259,7 +253,6 @@ class controller :
         return (np.mean(deltas) > open_thresh)
 ###############################################################################################################################################################
     def deliv_objectCB(self, data):
-        # print("hi") 
         self.girl_pose = data.pedestrian_list[0]
         self.obstacle_1 = data.obstacle_list[0]
         self.obstacle_2 = data.obstacle_list[1]
@@ -314,20 +307,6 @@ class controller :
         if not self.slam_state:
             self.navigation()
         # ######################################################### 슬램 목적지 #######################################################
-        # if not self.slam_state:
-        #     print("슬램모드")
-        #     if self.girl_pose and self.obstacle_1 and self.obstacle_2 is not None:
-        #         self.navigation()
-        #         if self.check[1] == 1 and not self.first_ob_state:
-        #             self.stop()
-        #             self.first_ob_state = True
-        #         elif self.check [1] == 1 and self.check[2] == 1 and not self.second_ob_state:
-        #             self.stop()
-        #             self.second_ob_state = True
-        #         elif self.check[1] == 1 and self.check[2] == 1 and self.check[0] == 1 and not self.third_ob_state:
-        #             self.stop()
-        #             self.third_ob_state = True
-        # self.obj_count = 0  # ← 이 리셋은 지우세요(전역 누적이 필요 없으면 그냥 쓰지 말기)
         elif self.slam_state:
             self.stop_line(self.len_left)
             print(f"{self.avoid_count}")
@@ -356,7 +335,7 @@ class controller :
             valid_front  = [r for r in front_ranges if 0.5 < r < 5.0]
             min_front    = (np.median(valid_front) if valid_front else 5.0)
 
-            # ★ 이번 프레임에 한해서 섹터 내 장애물 개수 산출(지역변수)
+            # 이번 프레임에 한해서 섹터 내 장애물 개수 산출(지역변수)
             obs_cnt = 0
             if hasattr(self, "cluster_center") and len(self.cluster_center) > 0:
                 for x, y in self.cluster_center:
@@ -404,29 +383,6 @@ class controller :
             self.goal_list.append(self.start)
             
             # 두번째 목적지에 대해 x,y좌표와 회전 방향및 바라볼 방향까지 저장
-            # self.first_object = MoveBaseGoal()
-            # self.first_object.target_pose.header.frame_id = 'map'
-            # self.first_object.target_pose.pose.position.x = self.obstacle_1.position.x + 18.5 # 15, -5
-            # self.first_object.target_pose.pose.position.y = self.obstacle_1.position.y - 4
-            # self.first_object.target_pose.pose.orientation.w = 1.0
-            # self.first_object.target_pose.pose.orientation.z = 0.0
-            # self.goal_list.append(self.first_object)
-            
-            # self.second_object = MoveBaseGoal()
-            # self.second_object.target_pose.header.frame_id = 'map'
-            # self.second_object.target_pose.pose.position.x = self.obstacle_2.position.x + 18.5 # 14, 0
-            # self.second_object.target_pose.pose.position.y = self.obstacle_2.position.y - 4
-            # self.second_object.target_pose.pose.orientation.w = 0.0
-            # self.second_object.target_pose.pose.orientation.z = 1.0
-            # self.goal_list.append(self.second_object)
-            
-            # self.deliv_object = MoveBaseGoal()
-            # self.deliv_object.target_pose.header.frame_id = 'map'
-            # self.deliv_object.target_pose.pose.position.x = self.girl_pose.position.x + 18.5 # 9,-8
-            # self.deliv_object.target_pose.pose.position.y = self.girl_pose.position.y - 4
-            # self.deliv_object.target_pose.pose.orientation.w = 0.0
-            # self.deliv_object.target_pose.pose.orientation.z = 1.0
-            # self.goal_list.append(self.deliv_object)
             
             self.goal = MoveBaseGoal()
             self.goal.target_pose.header.frame_id = 'map'
@@ -440,21 +396,6 @@ class controller :
         ############################# 테스트 ########################
         if self.client.get_state() != GoalStatus.ACTIVE:
             self.client.send_goal(self.goal_list[1])
-        # if self.check[1] == 0:
-        #     if self.client.get_state() != GoalStatus.ACTIVE:
-        #         self.client.send_goal(self.goal_list[1])
-        #         print("첫번째 배송지")
-        # elif self.check[1] == 1 and self.check[2] == 0:
-        #     if self.client.get_state() != GoalStatus.ACTIVE:
-        #         self.client.send_goal(self.goal_list[2])
-        #         print("두번째 배송지")
-        # elif self.check[2] == 1 and self.check[0] == 0:
-        #     if self.client.get_state() != GoalStatus.ACTIVE:
-        #         self.client.send_goal(self.goal_list[3])
-        #         print("세번째 배송지")
-        # elif self.check[0] == 1 and self.check[1] == 1 and self.check[2] == 1:
-        #     if self.client.get_state() != GoalStatus.ACTIVE:
-        #         self.client.send_goal(self.goal_list[4])
     def stop(self):
         self.client.cancel_all_goals()
     # 카메라 기반 제어 코드
@@ -513,7 +454,6 @@ class controller :
                     # (4) 그 외에는 계속 차선주행(PD)
                     steer_angle = self.cal_steer()
                     self.publish(steer_angle, 500)
-    # self.traffic_red = 5, 1 self.traffic_green = 16 self.traffic_greed_left = 33 self.traffic_red = 5, 1
     # ################# 2차선 주행 #$###########################
             else:
                 if self.stop_flag == 5:
@@ -578,7 +518,6 @@ class controller :
             elif self.traffic_state == 4:
                 steer_angle = self.cal_steer()
                 self.publish(steer_angle, 500)
-# self.traffic_red = 5, 1 self.traffic_green = 16 self.traffic_greed_left = 33 self.traffic_red = 5, 1
             elif self.stop_flag == 2:
                 if self.traffic_state == 5 or self.traffic_state == 1 or self.traffic_state == 4:
                     self.red_stop()
@@ -679,7 +618,7 @@ class controller :
         print("좌회전 하드 코딩")
         while rospy.get_time() - start_time < 5.0:
             t = rospy.get_time() - start_time
-            post_gate = (t >= 5.0)  # ← ★ 이 시점 전에는 '인식/전환' 금지
+            post_gate = (t >= 5.0)  # 진입 초기 오인식 방지 게이트
     
             # ===== 하드코딩 조향/속도 =====
             if t < 1.65:
@@ -748,7 +687,7 @@ class controller :
         print("좌회전 하드 코딩")
         while rospy.get_time() - start_time < 5.0:
             t = rospy.get_time() - start_time
-            post_gate = (t >= 4.0)  # ★ 1.4s 이후부터만 인식/전환 허용
+            post_gate = (t >= 4.0)  # 1.4s 이후부터만 인식/전환 허용
 
             # ===== 하드코딩 조향/속도 =====
             if t < 1.2:
@@ -872,9 +811,9 @@ class controller :
         #  - off: 곡률이 충분히 줄어듦(<3) + err도 완화(<40)
         self.right_ultra = getattr(self, "right_ultra", False)
         if (err > 90.0 and err > 0) or (kappa_r > 6.0):
-            self.right_ultra = True                      # ★ ultra-right-turn: on
+            self.right_ultra = True                      # ultra-right-turn: on
         elif (kappa_r < 3.0 and err < 40.0):
-            self.right_ultra = False                     # ★ ultra-right-turn: off
+            self.right_ultra = False                     # ultra-right-turn: off
 
         # P
         norm = abs(err) / 160.0
@@ -893,7 +832,7 @@ class controller :
         p_term = err / divisor
         d_term = Kd * (err - self.last_err_px)
 
-        # ★ ultra-right-turn: 우회전 클떄 P를 더 키움(divisor 갑소)
+        # ultra-right-turn: 우회전 클떄 P를 더 키움(divisor 갑소)
         FF_GAIN = 0.22       # (0.16~0.28) 크게 할수록 더 빨리 오른쪽으로
         FF_ALPHA = 1.0/22.0  # (1/18~1/30) 작을수록 민감
         ff_term = 0.0      #기본 0
@@ -911,11 +850,11 @@ class controller :
         target = 0.5 + filt_delta
 
         # === 포화 한계 ===
-        right_lim = 1.0      # ★ ultra-right-turn: 우측 상한 1.0 허용
+        right_lim = 1.0      # ultra-right-turn: 우측 상한 1.0 허용
         left_lim  = 0.1
         steer_lin = max(left_lim, min(right_lim, target))
 
-        # ★ ultra-right-turn: 우측 증가 슬루(프레임당 증가 허용량) 완화
+        # ultra-right-turn: 우측 증가 슬루(프레임당 증가 허용량) 완화
         #   강회전일 때는 빠르게 1.0에 접근, 평소에는 보수적으로
         SLEW_RIGHT = 0.16 if (self.right_ultra and err > 0.0) else 0.04
         steer = steer_lin
@@ -957,7 +896,6 @@ class controller :
             min_idx = np.argmin(front_ranges)
             min_dist = front_ranges[min_idx]
             min_angle = roi_start + min_idx
-            #x, y = self.location_xy(min_dist, min_angle)
 
         # ========== STRAIGHT ==========
         if self.state == State.STRAIGHT:
@@ -989,7 +927,7 @@ class controller :
                     self.state_start = now
                     self.stop_analysis_start = now
                     self.stop_ranges_log = []
-                    rospy.loginfo("⏸️ 장애물 감지 → STOP 상태 진입(동/정 분석)")
+                    rospy.loginfo("장애물 감지 → STOP 상태 진입(동/정 분석)")
                 
             else:
                 self.roundabout_detect_count = 0
@@ -1030,12 +968,12 @@ class controller :
                     rospy.loginfo(f"[STOP분석] moving_score={moving_score:.4f}")
                     if moving_score > 0.3:
                         
-                        rospy.loginfo("🚨 동적 장애물로 판단 → DYNAMIC_STOP 상태")
+                        rospy.loginfo("동적 장애물로 판단 → DYNAMIC_STOP 상태")
                         self.state = State.DYNAMIC_STOP
                         self.state_start = now
                         self.last_dynamic_seen_time = now
                     else:
-                        rospy.loginfo("✅ 정적 장애물로 판단 → 회피 진입")
+                        rospy.loginfo("정적 장애물로 판단 → 회피 진입")
                         self.state = State.AVOIDING
                         self.state_start = now
                         self.avoid_start = now
@@ -1058,9 +996,9 @@ class controller :
             min_r = min([r for _, _, _, r in sector]) if sector else float('inf')
             # --- 이어하기 재개 우선 ---
             if self.hard_resume_pending and (min_r >= self.hard_resume_dist):
-                rospy.loginfo(f"▶️ 하드 진입 재개: 남은 {max(0.0, self.hard_entry_duration - self.hard_entry_progress):.2f}s")
+                rospy.loginfo(f"하드 진입 재개: 남은 {max(0.0, self.hard_entry_duration - self.hard_entry_progress):.2f}s")
                 self.use_hard_entry = True
-                # ★ progress는 유지! 리셋 금지
+                # progress는 유지! 리셋 금지
                 self.state = State.ENTER_ROUNDABOUT
                 self.state_start = now
                 self.hard_resume_pending = False
@@ -1071,14 +1009,14 @@ class controller :
             # --- 새로 시작 트리거(처음부터) ---
             if min_r >= 1.0:
                 self.use_hard_entry = True
-                self.hard_entry_progress = 0.0     # ★ 새 시작일 때만 리셋
+                self.hard_entry_progress = 0.0     # 새 시작일 때만 리셋
                 self.hard_entry_start = now
                 self.state = State.ENTER_ROUNDABOUT
                 self.stopline_block = True #0909
                 self.state_start = now
                 rospy.loginfo(f"🚗 하드 진입 트리거: 섹터 min_r={min_r:.2f}m ≥ 2.0m → 하드모드 시작")
             elif gap_ok and opening:
-                rospy.loginfo(f"✅ GAP OK (min_r={min_r:.2f}m, opening={opening}) → CHECK_GAP")
+                rospy.loginfo(f"GAP OK (min_r={min_r:.2f}m, opening={opening}) → CHECK_GAP")
                 self.state = State.CHECK_GAP
                 self.state_start = now
         
@@ -1113,7 +1051,7 @@ class controller :
                 
                 # (A) 위험하면 즉시 중단 → STOP으로 이동 (일시정지)
                 if min_r < self.hard_pause_dist:
-                    rospy.logwarn(f"🚨 하드 진입 중단: min_r={min_r:.2f}m < {self.hard_pause_dist:.1f}m → STOP 대기")
+                    rospy.logwarn(f"하드 진입 중단: min_r={min_r:.2f}m < {self.hard_pause_dist:.1f}m → STOP 대기")
                     self.hard_resume_pending = True
                     self.use_hard_entry = False
                     self.state = State.STOP
@@ -1133,22 +1071,21 @@ class controller :
                 if self.avoid_count % 2 == 0:
                     self.hard_entry_duration =2.2
                     #2차선
-                    print("ssssssssssssssss")
                     self.steer_msg.data = 0.76    # 예: 0.7 
                     self.speed_msg.data = 1200.0     # 예: 1200.0
-                    self.hard_entry_progress += dt            # ★ 진행시간 누적
+                    self.hard_entry_progress += dt            # 진행시간 누적
 
                 else:
                     self.hard_entry_duration =2.2 
                     self.steer_msg.data = 0.7     # 예: 0.7 
                     self.speed_msg.data = 1200.0     # 예: 1200.0
-                    self.hard_entry_progress += dt            # ★ 진행시간 누적
+                    self.hard_entry_progress += dt            # 진행시간 누적
 
                 
                 
                 # 완료되면 EXIT로
                 if self.hard_entry_progress >= self.hard_entry_duration:  # 예: 2.0초
-                    rospy.loginfo("✅ 하드 진입 완료 → EXIT_ROUNDABOUT 전이")
+                    rospy.loginfo("하드 진입 완료 → EXIT_ROUNDABOUT 전이")
                     self.use_hard_entry = False
                     self.hard_resume_pending = False
                     self.hard_entry_progress = 0.0
@@ -1178,10 +1115,8 @@ class controller :
             while rospy.get_time() - t0 < 2.7:  # 총 1.3초
                 elapsed = rospy.get_time() - t0
                 if elapsed < 1.35:       # 0~0.4s: 우측 회피
-                    #print("11111")
                     steer = 0.1
                 elif elapsed < 2.7:     # 0.4~0.9s: 직진
-                    #print("2222")
                     steer = 0.9
                 self.steer_msg.data = steer
                 self.speed_msg.data = 500.0
@@ -1192,7 +1127,7 @@ class controller :
             self.state = State.STRAIGHT
             self.lidar_mode = False 
             self.state_start = rospy.get_time()
-            rospy.loginfo("✅ 하드코딩 우측 회피 완료 → STRAIGHT 복귀")
+            rospy.loginfo("하드코딩 우측 회피 완료 → STRAIGHT 복귀")
             return
         elif self.state == State.AVOIDING_RIGHT:
             rospy.loginfo("[AVOIDING_RIGHT] 하드코딩 수행")
@@ -1200,10 +1135,8 @@ class controller :
             while rospy.get_time() - t0 < 2.7:  # 총 1.3초
                 elapsed = rospy.get_time() - t0
                 if elapsed < 1.35:       # 0~0.4s: 우측 회피
-                    #print("11111")
                     steer = 0.9
                 elif elapsed < 2.7:     # 0.4~0.9s: 직진
-                    #print("2222")
                     steer = 0.1
                 self.steer_msg.data = steer
                 self.speed_msg.data = 500.0
@@ -1213,7 +1146,7 @@ class controller :
             self.state = State.STRAIGHT
             self.lidar_mode = False 
             self.state_start = rospy.get_time()
-            rospy.loginfo("✅ 하드코딩 우측 회피 완료 → STRAIGHT 복귀")
+            rospy.loginfo("하드코딩 우측 회피 완료 → STRAIGHT 복귀")
             return
         elif self.state == State.RETURNING:
             self.speed_msg.data = 500.0
@@ -1227,12 +1160,12 @@ class controller :
                 self.state = State.STRAIGHT
                 self.lidar_mode = False 
                 self.state_start = now
-                rospy.loginfo("✅ 2차선 복귀 (STRAIGHT)")
+                rospy.loginfo("2차선 복귀 (STRAIGHT)")
         elif self.state == State.DYNAMIC_STOP:
             self.speed_msg.data = 0.0
             self.steer_msg.data = 0.5
             if now - self.last_dynamic_seen_time > 1.0:
-                rospy.loginfo("✅ 동적 장애물 사라짐 → STRAIGHT 상태로 복귀")
+                rospy.loginfo("동적 장애물 사라짐 → STRAIGHT 상태로 복귀")
                 self.state = State.STRAIGHT
                 self.lidar_mode = False
                 self.state_start = now
@@ -1250,7 +1183,7 @@ class controller :
                 self.EXIT_stopline_count =True
                 self.stopline_block = False 
 
-                rospy.loginfo("✅ EXIT_ROUNDABOUT 종료, STRAIGHT 상태로 복귀")
+                rospy.loginfo("EXIT_ROUNDABOUT 종료, STRAIGHT 상태로 복귀")
                 return
 
         self.speed_pub.publish(self.speed_msg)
@@ -1258,8 +1191,6 @@ class controller :
         self.prev_clusters = np.copy(self.cluster_center)
         self._last_lidar_ts = rospy.get_time()
     def publish(self, steer, speed):
-        # print("steering_angle = ", steer)
-        # print("speed = ", speed)
         steering_angle = steer
         speed_data = speed
         self.steer_msg.data = steering_angle

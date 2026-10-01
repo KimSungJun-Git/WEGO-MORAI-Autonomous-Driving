@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rospy
 import numpy as np
-from std_msgs.msg import Float64MultiArray, Int32
+from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import LaserScan
 
 class Lidar_callback:
@@ -12,21 +12,20 @@ class Lidar_callback:
         self.ranges_cluster_msg = Float64MultiArray()
 
     def lidar_callback(self, data):
-        rospy.loginfo_once("✅ lidar_callback 실행됨")
+        rospy.loginfo_once("lidar_callback 실행됨")
         original_ranges = np.array(data.ranges)
         angle_min = data.angle_min
         angle_increment = data.angle_increment
         
-        # NaN 처리
+        # 결측치 처리
         original_ranges[np.isnan(original_ranges)] = 5.0
         
-        # 0~359도 원본 데이터를 180도 기준 좌우 반전시켜 재배열
+        # 180도 기준 좌우 반전 및 재배열
         remapped_ranges = [0.0] * len(original_ranges)
         for i in range(len(original_ranges)):
             new_index = (i + 180) % len(original_ranges)
             remapped_ranges[new_index] = original_ranges[i]
 
-        # remapped 데이터 발행
         points = []
         for i, r in enumerate(original_ranges):
             if r < 5.0:
@@ -58,15 +57,15 @@ class Lidar_callback:
                     clusters.append(cluster)
             return clusters
 
-        cluster_centers = [] #중심 계산
+        cluster_centers = []
         if len(points) > 0:
             clusters = euclidean_clustering(points, eps=0.5, min_samples=3)
             for cluster in clusters:
                 cluster_points = points[cluster]
                 center = np.mean(cluster_points, axis=0)
                 cluster_centers.extend(center.tolist())
+
         ranges_cluster_centers = remapped_ranges + cluster_centers
-        #print(ranges_cluster_centers)
         self.ranges_cluster_msg.data = ranges_cluster_centers
         self.ranges_cluster_pub.publish(self.ranges_cluster_msg)
 
